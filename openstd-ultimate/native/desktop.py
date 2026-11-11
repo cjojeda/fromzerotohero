@@ -7,6 +7,7 @@ from tkinter import filedialog, messagebox, ttk
 from pathlib import Path
 from collector import collect
 from diagnostics import run_basic_checks
+from sensors import collect_sensors
 
 class App(tk.Tk):
     def __init__(self):
@@ -29,7 +30,7 @@ class App(tk.Tk):
         sidebar.pack(side="left",fill="y")
         sidebar.pack_propagate(False)
         tk.Label(sidebar,text="◈ OpenSTD Ultimate",fg="#5fe1b5",bg="#111e33",font=("Segoe UI",15,"bold")).pack(pady=(28,24))
-        for label,callback in [("Actualizar inventario",self.refresh),("Diagnóstico básico",self.check),("Exportar JSON",self.export)]:
+        for label,callback in [("Actualizar inventario",self.refresh),("Diagnóstico básico",self.check),("Leer sensores",self.read_sensors),("Exportar JSON",self.export)]:
             tk.Button(sidebar,text=label,command=callback,bg="#213653",fg="white",relief="flat",font=("Segoe UI",10),pady=12).pack(fill="x",padx=14,pady=6)
         tk.Label(sidebar,text="ALPHA · SIN PRUEBAS DE ESTRÉS",bg="#111e33",fg="#a6b8d0",wraplength=170,font=("Segoe UI",9)).pack(side="bottom",pady=20)
         body=tk.Frame(self,bg="#0c1424")
@@ -57,6 +58,9 @@ class App(tk.Tk):
     def check(self):
         self._run(lambda:{"inventory":collect(),"checks":run_basic_checks()})
 
+    def read_sensors(self):
+        self._run(lambda:{'inventory':collect(),'checks':[],'sensor_snapshot':collect_sensors()})
+
     def _poll(self):
         try:
             while True:
@@ -79,6 +83,19 @@ class App(tk.Tk):
         for disk in data["filesystems"]:
             rows.append(("Espacio libre "+disk["mount"],f'{disk["free_bytes"]/1073741824:.2f} GiB'))
         for c in report["checks"]:rows.append((c["name"],c["status"]+" — "+c["detail"]))
+        snapshot=report.get("sensor_snapshot")
+        if snapshot:
+            for b in snapshot["battery"].get("batteries",[]):
+                rows.append(("Batería "+str(b.get("name") or ""),str(b.get("charge_percent") if b.get("charge_percent") is not None else "N/D")+" % carga"))
+                if b.get("wear_percent") is not None:
+                    rows.append(("Desgaste batería",str(b["wear_percent"])+" %"))
+            for sensor in snapshot["thermal"].get("sensors",[]):
+                rows.append(("Temperatura "+str(sensor["label"]),str(sensor["celsius"])+" °C"))
+            for disk in snapshot["disks"].get("devices",[]):
+                rows.append(("Estado unidad "+str(disk.get("name") or ""),str(disk.get("health_status") or "N/D")+" (no SMART completo)"))
+            for key,label in [("thermal","Temperaturas"),("battery","Batería"),("disks","Estado de unidades")]:
+                if not snapshot[key]["available"]:
+                    rows.append((label,"No disponible"))
         for a,b in rows:self.table.insert("","end",values=(a,b))
         self.status.set("Lectura terminada. Las comprobaciones básicas no sustituyen pruebas de hardware.")
 
